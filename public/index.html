@@ -167,7 +167,7 @@
     <script>
         let room = null;
         let voices = [];
-        const backendUrl = 'http://localhost:3000';
+        const backendUrl = window.location.origin; // Works both locally and in production
         
         // Fetch voices on page load
         async function loadVoices() {

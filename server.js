@@ -2,7 +2,7 @@
 const path = require('path');
 const dotenv = require('dotenv');
 
-// Explicitly load from .env file in project root
+// Load from .env file if it exists (for local development)
 dotenv.config({ path: path.resolve(process.cwd(), '.env') });
 
 // Validate required environment variables
