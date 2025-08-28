@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LiveKit Audio Room</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: white;
+        }
+        
+        .container {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+        
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            font-weight: 600;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+        }
+        
+        input {
+            width: 100%;
+            padding: 12px 16px;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            background: rgba(255, 255, 255, 0.9);
+            color: #333;
+            box-sizing: border-box;
+        }
+        
+        select {
+            width: 100%;
+            padding: 12px 16px;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            background: rgba(255, 255, 255, 0.9);
+            color: #333;
+            box-sizing: border-box;
+            cursor: pointer;
+        }
+        
+        input:focus, select:focus {
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.3);
+        }
+        
+        button {
+            width: 100%;
+            padding: 15px;
+            background: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 18px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        button:hover {
+            background: #45a049;
+            transform: translateY(-2px);
+        }
+        
+        button:disabled {
+            background: #cccccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .status {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 10px;
+            text-align: center;
+            font-weight: 500;
+        }
+        
+        .status.success {
+            background: rgba(76, 175, 80, 0.2);
+            border: 1px solid rgba(76, 175, 80, 0.5);
+        }
+        
+        .status.error {
+            background: rgba(244, 67, 54, 0.2);
+            border: 1px solid rgba(244, 67, 54, 0.5);
+        }
+        
+        .status.info {
+            background: rgba(33, 150, 243, 0.2);
+            border: 1px solid rgba(33, 150, 243, 0.5);
+        }
+        
+        .participants {
+            margin-top: 20px;
+            padding: 15px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+        }
+        
+        .participant {
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .participant:last-child {
+            border-bottom: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎤 Voice Transformation Room</h1>
+        
+        <div class="form-group">
+            <label for="identity">Your Name:</label>
+            <select id="identity">
+                <option value="" disabled selected>Select your name</option>
+                <option value="Maddox">Maddox</option>
+                <option value="Amber">Amber</option>
+            </select>
+        </div>
+        
+        <div class="form-group">
+            <label for="voiceSelect">Choose Your Voice:</label>
+            <select id="voiceSelect" onchange="selectVoice()">
+                <option value="">Loading voices...</option>
+            </select>
+        </div>
+        
+        <button id="joinBtn" onclick="joinRoom()">Join Room</button>
+        
+        <div id="status" class="status" style="display: none;"></div>
+        
+        <div id="participants" class="participants" style="display: none;">
+            <h3>Participants:</h3>
+            <div id="participantList"></div>
+        </div>
+    </div>
+
+    <!-- LiveKit Client SDK -->
+    <script src="https://unpkg.com/livekit-client@2.1.3/dist/livekit-client.umd.js"></script>
+    
+    <script>
+        let room = null;
+        let voices = [];
+        const backendUrl = 'http://localhost:3000';
+        
+        // Fetch voices on page load
+        async function loadVoices() {
+            try {
+                const response = await fetch(`${backendUrl}/voices`);
+                if (!response.ok) {
+                    throw new Error(`Failed to fetch voices: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                voices = data.voices || [];
+                
+                const select = document.getElementById('voiceSelect');
+                select.innerHTML = '<option value="">Select a voice...</option>';
+                
+                voices.forEach(voice => {
+                    const option = document.createElement('option');
+                    option.value = voice.voice_id;
+                    option.textContent = voice.name;
+                    select.appendChild(option);
+                });
+                
+                console.log(`Loaded ${voices.length} voices`);
+            } catch (error) {
+                console.error('Error loading voices:', error);
+                const select = document.getElementById('voiceSelect');
+                select.innerHTML = '<option value="">Error loading voices</option>';
+                showStatus(`Error loading voices: ${error.message}`, 'error');
+            }
+        }
+        
+        // Handle voice selection
+        async function selectVoice() {
+            const identity = document.getElementById('identity').value.trim();
+            const voiceId = document.getElementById('voiceSelect').value;
+            
+            if (!identity) {
+                showStatus('Please enter your name before selecting a voice', 'error');
+                return;
+            }
+            
+            if (!voiceId) {
+                return; // No voice selected
+            }
+            
+            try {
+                const response = await fetch(`${backendUrl}/set-voice`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        userId: identity,
+                        voiceId: voiceId
+                    })
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`Failed to set voice: ${response.status}`);
+                }
+                
+                const result = await response.json();
+                const selectedVoice = voices.find(v => v.voice_id === voiceId);
+                const voiceName = selectedVoice ? selectedVoice.name : 'Unknown';
+                
+                showStatus(`✅ Voice set to: ${voiceName}`, 'success');
+                console.log('Voice selection saved:', result);
+                
+            } catch (error) {
+                console.error('Error setting voice:', error);
+                showStatus(`Error setting voice: ${error.message}`, 'error');
+            }
+        }
+        
+        function showStatus(message, type = 'info') {
+            const statusEl = document.getElementById('status');
+            statusEl.textContent = message;
+            statusEl.className = `status ${type}`;
+            statusEl.style.display = 'block';
+        }
+        
+        function updateParticipants() {
+            const participantsEl = document.getElementById('participants');
+            const listEl = document.getElementById('participantList');
+            
+            if (room && room.remoteParticipants.size > 0) {
+                participantsEl.style.display = 'block';
+                listEl.innerHTML = '';
+                
+                // Add local participant
+                const localDiv = document.createElement('div');
+                localDiv.className = 'participant';
+                localDiv.textContent = `${room.localParticipant.identity} (You)`;
+                listEl.appendChild(localDiv);
+                
+                // Add remote participants
+                room.remoteParticipants.forEach(participant => {
+                    const div = document.createElement('div');
+                    div.className = 'participant';
+                    div.textContent = participant.identity;
+                    listEl.appendChild(div);
+                });
+            } else {
+                participantsEl.style.display = 'none';
+            }
+        }
+        
+        async function joinRoom() {
+            const identity = document.getElementById('identity').value.trim();
+            const joinBtn = document.getElementById('joinBtn');
+            
+            if (!identity) {
+                showStatus('Please enter your name', 'error');
+                return;
+            }
+            
+            try {
+                joinBtn.disabled = true;
+                joinBtn.textContent = 'Connecting...';
+                showStatus('Getting token from backend...', 'info');
+                
+                // Get token from backend
+                const tokenResponse = await fetch(`${backendUrl}/get-token?roomName=testroom&identity=${encodeURIComponent(identity)}`);
+                
+                if (!tokenResponse.ok) {
+                    throw new Error(`Failed to get token: ${tokenResponse.status} ${tokenResponse.statusText}`);
+                }
+                
+                const tokenData = await tokenResponse.json();
+                console.log('Token received:', tokenData);
+                
+                showStatus('Connecting to room...', 'info');
+                
+                // Create room instance
+                room = new LivekitClient.Room({
+                    // Enable audio, disable video
+                    videoCaptureDefaults: {
+                        resolution: LivekitClient.VideoPresets.h720.resolution,
+                    },
+                    publishDefaults: {
+                        audioPreset: LivekitClient.AudioPresets.music,
+                        videoCodec: 'h264',
+                        stopMicTrackOnMute: false,
+                    },
+                });
+                
+                // Set up event listeners
+                room.on(LivekitClient.RoomEvent.Connected, async () => {
+                    console.log('Joined room successfully');
+                    showStatus('✅ Joined room successfully!', 'success');
+                    joinBtn.textContent = 'Leave Room';
+                    joinBtn.onclick = leaveRoom;
+                    joinBtn.disabled = false;
+                    updateParticipants();
+
+                    // Proactively unlock audio context after a user gesture (join click)
+                    try {
+                      await room.startAudio();
+                      console.log('✅ Audio context unlocked');
+                    } catch (e) {
+                      console.warn('⚠️ Could not auto-unlock audio context:', e);
+                      showStatus('Click anywhere to enable audio playback', 'info');
+                      const clickHandler = async () => {
+                        try { await room.startAudio(); } catch {}
+                        document.removeEventListener('click', clickHandler);
+                        showStatus('🎵 Audio enabled!', 'success');
+                      };
+                      document.addEventListener('click', clickHandler);
+                    }
+                });
+                
+                room.on(LivekitClient.RoomEvent.ParticipantConnected, (participant) => {
+                    console.log('🔍 [FRONTEND] participantConnected:', participant.identity);
+                    showStatus(`${participant.identity} joined the room`, 'info');
+                    updateParticipants();
+                });
+                
+                room.on(LivekitClient.RoomEvent.ParticipantDisconnected, (participant) => {
+                    console.log('Participant disconnected:', participant.identity);
+                    showStatus(`${participant.identity} left the room`, 'info');
+                    updateParticipants();
+                });
+                
+                room.on(LivekitClient.RoomEvent.Disconnected, (reason) => {
+                    console.log('Disconnected from room:', reason);
+                    showStatus('Disconnected from room', 'info');
+                    resetUI();
+                });
+                
+                // Handle remote audio tracks for playback - TRANSFORMED VOICES
+                room.on(LivekitClient.RoomEvent.TrackSubscribed, (track, pub, participant) => {
+                  const trackName = pub?.trackName || track?.name || '';
+                  console.log('🔍 Track subscribed:', track.kind, 'from', participant.identity, 'name:', trackName);
+                  
+                  if (track.kind !== 'audio') return;
+                  
+                  // Play any worker-published transformed voice
+                  const isWorker = participant.identity === 'audio-worker';
+                  const isTransformed = trackName.startsWith('from-');
+                  
+                  if (isWorker && isTransformed) {
+                    console.log('🎧 Subscribing to transformed voice track:', trackName);
+                    
+                    // Extract original speaker name from track name (e.g., "from-Maddox" -> "Maddox")
+                    const originalSpeaker = trackName.replace('from-', '');
+                    const isMyVoice = originalSpeaker === room.localParticipant?.identity;
+                    
+                    const audioEl = track.attach();
+                    audioEl.autoplay = true;
+                    audioEl.playsInline = true;
+                    audioEl.muted = false;
+                    audioEl.volume = 1.0;
+                    audioEl.style.display = 'none';
+                    document.body.appendChild(audioEl);
+                    
+                    audioEl.play().then(() => {
+                      if (isMyVoice) {
+                        console.log('✅ Playing your transformed voice:', trackName);
+                        showStatus('🎵 Hearing your transformed voice!', 'success');
+                      } else {
+                        console.log('✅ Playing other participant transformed voice:', trackName);
+                        showStatus(`🎵 Hearing ${originalSpeaker}'s transformed voice!`, 'success');
+                      }
+                    }).catch(err => {
+                      console.warn('❌ Autoplay blocked for transformed voice:', err);
+                      showStatus('Click to enable audio playback', 'info');
+                      const clickHandler = () => { 
+                        audioEl.play(); 
+                        document.removeEventListener('click', clickHandler); 
+                        showStatus('🎵 Audio enabled!', 'success'); 
+                      };
+                      document.addEventListener('click', clickHandler);
+                    });
+                  }
+                });
+                
+                // Connect to room with audio enabled, video disabled
+                const liveKitUrl = tokenData.wsUrl;
+                const roomName = tokenData.room || 'testroom';
+                console.log("🔍 [FRONTEND] Connecting to LiveKit:", { 
+                    url: liveKitUrl, 
+                    roomName: roomName, 
+                    identity: identity 
+                });
+                
+                await room.connect(liveKitUrl, tokenData.token, {
+                    autoSubscribe: true,
+                });
+                
+                // Add participant connected event listener
+                room.on(LivekitClient.RoomEvent.ParticipantConnected, (participant) => {
+                    console.log('🔍 [FRONTEND] participantConnected:', participant.identity);
+                });
+                
+                // Enable audio publishing via LiveKit helper
+                const micTrack = await LivekitClient.createLocalAudioTrack({
+                  echoCancellation: true,
+                  noiseSuppression: false,
+                  autoGainControl: false,
+                });
+                await room.localParticipant.publishTrack(micTrack, { name: 'mic' });
+                console.log('Microphone published');
+                
+            } catch (error) {
+                console.error('Error joining room:', error);
+                showStatus(`Error: ${error.message}`, 'error');
+                resetUI();
+            }
+        }
+        
+        async function leaveRoom() {
+            if (room) {
+                await room.disconnect();
+                room = null;
+            }
+            resetUI();
+        }
+        
+        function resetUI() {
+            const joinBtn = document.getElementById('joinBtn');
+            joinBtn.disabled = false;
+            joinBtn.textContent = 'Join Room';
+            joinBtn.onclick = joinRoom;
+            
+            const participantsEl = document.getElementById('participants');
+            participantsEl.style.display = 'none';
+        }
+        
+        // Handle page unload
+        window.addEventListener('beforeunload', () => {
+            if (room) {
+                room.disconnect();
+            }
+        });
+        
+        // Load voices when page loads
+        window.addEventListener('DOMContentLoaded', loadVoices);
+    </script>
+</body>
+</html> 
