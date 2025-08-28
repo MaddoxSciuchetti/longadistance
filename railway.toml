@@ -2,4 +2,4 @@
 builder = "nixpacks"
 
 [deploy]
-startCommand = "node worker.js testroom"
+startCommand = "node server.js"
